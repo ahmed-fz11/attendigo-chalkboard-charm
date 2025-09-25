@@ -18,11 +18,11 @@ interface Student {
 const TakeAttendance = () => {
   const [selectedClass, setSelectedClass] = useState('');
   const [students, setStudents] = useState<Student[]>([
-    { id: 1, name: 'Emma Johnson', status: 'present', notes: '' },
+    { id: 1, name: 'Emma Johnson', status: 'present', notes: 'none' },
     { id: 2, name: 'Michael Brown', status: 'absent', notes: 'Left early' },
-    { id: 3, name: 'Sarah Davis', status: 'present', notes: '' },
+    { id: 3, name: 'Sarah Davis', status: 'present', notes: 'none' },
     { id: 4, name: 'Alex Wilson', status: 'absent', notes: 'Sick' },
-    { id: 5, name: 'Jessica Miller', status: 'present', notes: '' },
+    { id: 5, name: 'Jessica Miller', status: 'present', notes: 'none' },
   ]);
   const [submitted, setSubmitted] = useState(false);
 
@@ -117,7 +117,7 @@ const TakeAttendance = () => {
                           <SelectValue placeholder="Select notes..." />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="">No notes</SelectItem>
+                          <SelectItem value="none">No notes</SelectItem>
                           <SelectItem value="Left early">Left early</SelectItem>
                           <SelectItem value="Sick">Sick</SelectItem>
                           <SelectItem value="Absent">Absent</SelectItem>
