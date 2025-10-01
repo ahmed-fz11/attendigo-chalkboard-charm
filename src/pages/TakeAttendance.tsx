@@ -60,7 +60,7 @@ const TakeAttendance = () => {
         backgroundRepeat: 'no-repeat'
       }}
     >
-      <Navbar showReportsButton onLogout={() => {}} />
+      <Navbar showReportsButton />
       
       <div className="container mx-auto p-4 space-y-6">
         <Card className="backdrop-blur-sm bg-card/95 shadow-lg">

@@ -1,19 +1,18 @@
 import { Button } from "@/components/ui/button";
 import { useNavigate } from "react-router-dom";
+import { useAuthContext } from "@/contexts/AuthContext";
 
 interface NavbarProps {
   showReportsButton?: boolean;
   showAttendanceButton?: boolean;
-  onLogout?: () => void;
 }
 
-const Navbar = ({ showReportsButton, showAttendanceButton, onLogout }: NavbarProps) => {
+const Navbar = ({ showReportsButton, showAttendanceButton }: NavbarProps) => {
   const navigate = useNavigate();
+  const { logout } = useAuthContext();
 
-  const handleLogout = () => {
-    if (onLogout) {
-      onLogout();
-    }
+  const handleLogout = async () => {
+    await logout();
     navigate('/');
   };
 
