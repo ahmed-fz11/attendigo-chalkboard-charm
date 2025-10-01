@@ -56,7 +56,7 @@ const Reports = () => {
         backgroundRepeat: 'no-preference'
       }}
     >
-      <Navbar showAttendanceButton />
+      <Navbar showAttendanceButton onLogout={() => {}} />
       
       <div className="container mx-auto p-4 space-y-6">
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
