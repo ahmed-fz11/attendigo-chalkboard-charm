@@ -10,11 +10,16 @@ interface NavbarProps {
 const Navbar = ({ showReportsButton, showAttendanceButton, onLogout }: NavbarProps) => {
   const navigate = useNavigate();
 
-  const handleLogout = () => {
-    if (onLogout) {
-      onLogout();
+  const handleLogout = async () => {
+    try {
+      if (onLogout) {
+        await onLogout();
+      }
+    } catch (error) {
+      console.error("Failed to log out", error);
     }
-    navigate('/');
+
+    navigate('/login');
   };
 
   return (
@@ -39,7 +44,7 @@ const Navbar = ({ showReportsButton, showAttendanceButton, onLogout }: NavbarPro
         {showAttendanceButton && (
           <Button 
             variant="outline" 
-            onClick={() => navigate('/attendance')}
+            onClick={() => navigate('/take-attendance')}
             className="hidden sm:flex"
           >
             Take Attendance

@@ -6,6 +6,7 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
 import Navbar from "@/components/Navbar";
 import attendigoBg2 from "@/assets/attendigo_bg2.png";
+import { useAuth } from "@/hooks/useAuth";
 import { toast } from "@/hooks/use-toast";
 
 interface Student {
@@ -25,6 +26,7 @@ const TakeAttendance = () => {
     { id: 5, name: 'Jessica Miller', status: 'present', notes: 'none' },
   ]);
   const [submitted, setSubmitted] = useState(false);
+  const { logout } = useAuth();
 
   const updateStudentStatus = (studentId: number, status: 'present' | 'absent') => {
     setStudents(prev => 
@@ -50,6 +52,10 @@ const TakeAttendance = () => {
     });
   };
 
+  const handleLogout = async () => {
+    await logout();
+  };
+
   return (
     <div 
       className="min-h-screen"
@@ -60,7 +66,7 @@ const TakeAttendance = () => {
         backgroundRepeat: 'no-repeat'
       }}
     >
-      <Navbar showReportsButton onLogout={() => {}} />
+      <Navbar showReportsButton onLogout={handleLogout} />
       
       <div className="container mx-auto p-4 space-y-6">
         <Card className="backdrop-blur-sm bg-card/95 shadow-lg">

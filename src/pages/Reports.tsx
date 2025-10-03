@@ -2,9 +2,16 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import Navbar from "@/components/Navbar";
 import attendigoBg1 from "@/assets/attendigo_bg1.png";
+import { useAuth } from "@/hooks/useAuth";
 import { Download, Clock, Calendar, AlertTriangle } from "lucide-react";
 
 const Reports = () => {
+  const { logout } = useAuth();
+
+  const handleLogout = async () => {
+    await logout();
+  };
+
   const summaryData = [
     { 
       title: "Average Attendance", 
@@ -56,7 +63,7 @@ const Reports = () => {
         backgroundRepeat: 'no-preference'
       }}
     >
-      <Navbar showAttendanceButton onLogout={() => {}} />
+      <Navbar showAttendanceButton onLogout={handleLogout} />
       
       <div className="container mx-auto p-4 space-y-6">
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">

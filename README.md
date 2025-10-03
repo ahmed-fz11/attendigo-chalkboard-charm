@@ -36,6 +36,22 @@ npm i
 npm run dev
 ```
 
+## Supabase configuration
+
+1. Create a `.env` file in the project root:
+
+   ```env
+   REACT_APP_SUPABASE_URL=https://izojvjihlozhnbgoumcb.supabase.co
+   REACT_APP_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml6b2p2amlobG96aG5iZ291bWNiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc5NzM2NzcsImV4cCI6MjA3MzU0OTY3N30.HAag54UmBSeoAkk1a3LDZ1sVym5osKKw4EHLA-9vPvs
+   VITE_SUPABASE_URL=https://izojvjihlozhnbgoumcb.supabase.co
+   VITE_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml6b2p2amlobG96aG5iZ291bWNiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc5NzM2NzcsImV4cCI6MjA3MzU0OTY3N30.HAag54UmBSeoAkk1a3LDZ1sVym5osKKw4EHLA-9vPvs
+   ```
+
+   The duplicated `VITE_` variables allow Vite to expose the credentials to the browser build while keeping compatibility with other tooling that expects `REACT_APP_` keys.
+
+2. In the Supabase dashboard, under **Auth → Providers**, enable **Email** sign-in.
+3. For local development, disable email confirmations so that new sign-ups receive a session instantly. Re-enable confirmations before shipping to production to retain security best practices.
+
 **Edit a file directly in GitHub**
 
 - Navigate to the desired file(s).
