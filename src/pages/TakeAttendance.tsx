@@ -4,7 +4,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandItem, CommandList } from "@/components/ui/command";
@@ -13,11 +12,12 @@ import Navbar from "@/components/Navbar";
 import attendigoBg2 from "@/assets/attendigo_bg2.png";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "@/hooks/use-toast";
-import { Check, ChevronDown, Pencil, Trash2 } from "lucide-react";
+import { Check, ChevronDown, Pencil, Plus, Trash2 } from "lucide-react";
 
 interface Student {
   id: number;
   name: string;
+  phone: string;
   status: 'present' | 'absent';
   notes: string;
 }
@@ -28,48 +28,63 @@ interface ClassInfo {
   students: Student[];
 }
 
+interface StudentDraft {
+  key: string;
+  name: string;
+  phone: string;
+  existingId?: number;
+}
+
+interface ClassFormState {
+  name: string;
+  students: StudentDraft[];
+}
+
 const CLASS_API_BASE_URL = "https://api.example.com/classes";
+
+const generateDraftKey = () => `student-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+const createStudentDraft = (overrides?: Partial<StudentDraft>): StudentDraft => ({
+  key: overrides?.key ?? generateDraftKey(),
+  name: overrides?.name ?? '',
+  phone: overrides?.phone ?? '',
+  existingId: overrides?.existingId,
+});
 
 const INITIAL_CLASSES: ClassInfo[] = [
   {
     id: "grade8-b",
     name: "Grade 8 - Section B",
     students: [
-      { id: 1, name: "Emma Johnson", status: "present", notes: "none" },
-      { id: 2, name: "Michael Brown", status: "absent", notes: "Left early" },
-      { id: 3, name: "Sarah Davis", status: "present", notes: "none" },
-      { id: 4, name: "Alex Wilson", status: "absent", notes: "Sick" },
-      { id: 5, name: "Jessica Miller", status: "present", notes: "none" },
+      { id: 1, name: "Emma Johnson", phone: "555-0111", status: "present", notes: "none" },
+      { id: 2, name: "Michael Brown", phone: "555-0112", status: "absent", notes: "Left early" },
+      { id: 3, name: "Sarah Davis", phone: "555-0113", status: "present", notes: "none" },
+      { id: 4, name: "Alex Wilson", phone: "555-0114", status: "absent", notes: "Sick" },
+      { id: 5, name: "Jessica Miller", phone: "555-0115", status: "present", notes: "none" },
     ],
   },
   {
     id: "grade7-a",
     name: "Grade 7 - Section A",
     students: [
-      { id: 101, name: "Liam Carter", status: "present", notes: "none" },
-      { id: 102, name: "Olivia Reed", status: "present", notes: "none" },
-      { id: 103, name: "Noah Brooks", status: "absent", notes: "Sick" },
-      { id: 104, name: "Ava Morgan", status: "present", notes: "none" },
+      { id: 101, name: "Liam Carter", phone: "555-0211", status: "present", notes: "none" },
+      { id: 102, name: "Olivia Reed", phone: "555-0212", status: "present", notes: "none" },
+      { id: 103, name: "Noah Brooks", phone: "555-0213", status: "absent", notes: "Sick" },
+      { id: 104, name: "Ava Morgan", phone: "555-0214", status: "present", notes: "none" },
     ],
   },
   {
     id: "grade6-c",
     name: "Grade 6 - Section C",
     students: [
-      { id: 201, name: "Ethan Cooper", status: "present", notes: "none" },
-      { id: 202, name: "Mia Flores", status: "present", notes: "none" },
-      { id: 203, name: "Benjamin Hughes", status: "absent", notes: "Travel" },
+      { id: 201, name: "Ethan Cooper", phone: "555-0311", status: "present", notes: "none" },
+      { id: 202, name: "Mia Flores", phone: "555-0312", status: "present", notes: "none" },
+      { id: 203, name: "Benjamin Hughes", phone: "555-0313", status: "absent", notes: "Travel" },
     ],
   },
 ];
 
 const cloneStudents = (list: Student[]) => list.map((student) => ({ ...student }));
-
-const parseStudentNames = (input: string) =>
-  input
-    .split(/\r?\n|,/)
-    .map((name) => name.trim())
-    .filter(Boolean);
 
 const simulateApiCall = async (endpoint: string, payload: unknown) => {
   // TODO: replace with real API integration once endpoints are available
@@ -81,16 +96,16 @@ const TakeAttendance = () => {
   const { logout } = useAuth();
   const [classes, setClasses] = useState<ClassInfo[]>(INITIAL_CLASSES);
   const [selectedClass, setSelectedClass] = useState('');
-  const [students, setStudents] = useState<Student[]>(cloneStudents(INITIAL_CLASSES[0]?.students ?? []));
+  const [students, setStudents] = useState<Student[]>([]);
   const [submitted, setSubmitted] = useState(false);
   const [classSelectorOpen, setClassSelectorOpen] = useState(false);
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [editingClassId, setEditingClassId] = useState<string | null>(null);
-  const [classFormData, setClassFormData] = useState<{ name: string; studentsText: string }>({
+  const [classFormData, setClassFormData] = useState<ClassFormState>(() => ({
     name: '',
-    studentsText: '',
-  });
+    students: [createStudentDraft()],
+  }));
 
   const selectedClassName = useMemo(
     () => classes.find((cls) => cls.id === selectedClass)?.name ?? '',
@@ -118,7 +133,10 @@ const TakeAttendance = () => {
   };
 
   const resetClassForm = () => {
-    setClassFormData({ name: '', studentsText: '' });
+    setClassFormData({
+      name: '',
+      students: [createStudentDraft()],
+    });
   };
 
   const handleOpenCreateDialog = () => {
@@ -134,7 +152,17 @@ const TakeAttendance = () => {
     setEditingClassId(classId);
     setClassFormData({
       name: classInfo.name,
-      studentsText: classInfo.students.map((student) => student.name).join('\n'),
+      students:
+        classInfo.students.length > 0
+          ? classInfo.students.map((student) =>
+              createStudentDraft({
+                key: `existing-${student.id}`,
+                name: student.name,
+                phone: student.phone,
+                existingId: student.id,
+              }),
+            )
+          : [createStudentDraft()],
     });
     setIsEditDialogOpen(true);
   };
@@ -154,26 +182,130 @@ const TakeAttendance = () => {
     }
   };
 
+  const updateFormStudent = (key: string, field: 'name' | 'phone', value: string) => {
+    setClassFormData((prev) => ({
+      ...prev,
+      students: prev.students.map((student) =>
+        student.key === key ? { ...student, [field]: value } : student,
+      ),
+    }));
+  };
+
+  const handleAddStudentDraft = () => {
+    setClassFormData((prev) => ({
+      ...prev,
+      students: [...prev.students, createStudentDraft()],
+    }));
+  };
+
+  const handleRemoveStudentDraft = (key: string) => {
+    setClassFormData((prev) => {
+      if (prev.students.length === 1) {
+        return prev;
+      }
+      return {
+        ...prev,
+        students: prev.students.filter((student) => student.key !== key),
+      };
+    });
+  };
+
+  const renderStudentFormFields = () => (
+    <div className="space-y-4">
+      {classFormData.students.map((student, index) => (
+        <div
+          key={student.key}
+          className="space-y-3 rounded-lg border border-muted/40 bg-muted/10 p-4"
+        >
+          <div className="flex items-center justify-between">
+            <p className="text-sm font-semibold text-primary">Student {index + 1}</p>
+            {classFormData.students.length > 1 && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-8 px-2 text-xs text-destructive hover:text-destructive"
+                onClick={() => handleRemoveStudentDraft(student.key)}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">Remove</span>
+              </Button>
+            )}
+          </div>
+          <div className="grid gap-3 md:grid-cols-2">
+            <div className="space-y-1.5">
+              <Label htmlFor={`student-name-${student.key}`}>Student name</Label>
+              <Input
+                id={`student-name-${student.key}`}
+                value={student.name}
+                onChange={(event) =>
+                  updateFormStudent(student.key, 'name', event.target.value)
+                }
+                placeholder="e.g. Priya Agarwal"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor={`student-phone-${student.key}`}>Phone number</Label>
+              <Input
+                id={`student-phone-${student.key}`}
+                value={student.phone}
+                onChange={(event) =>
+                  updateFormStudent(student.key, 'phone', event.target.value)
+                }
+                placeholder="e.g. 555-123-4567"
+              />
+            </div>
+          </div>
+        </div>
+      ))}
+      <Button
+        type="button"
+        variant="outline"
+        className="w-full"
+        onClick={handleAddStudentDraft}
+      >
+        <Plus className="h-4 w-4" />
+        Add student
+      </Button>
+    </div>
+  );
+
   const handleCreateClassSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const trimmedName = classFormData.name.trim();
-    const studentNames = parseStudentNames(classFormData.studentsText);
+    const sanitizedStudents = classFormData.students.map((student) => ({
+      key: student.key,
+      name: student.name.trim(),
+      phone: student.phone.trim(),
+    }));
+
+    const hasIncompleteStudent = sanitizedStudents.some(
+      (student) => !student.name || !student.phone,
+    );
 
     if (!trimmedName) {
       toast({ title: 'Please enter a class name.' });
       return;
     }
 
-    if (studentNames.length === 0) {
-      toast({ title: 'Add at least one student name.' });
+    const validStudents = sanitizedStudents.filter((student) => student.name && student.phone);
+
+    if (validStudents.length === 0) {
+      toast({ title: 'Add at least one student with a phone number.' });
+      return;
+    }
+
+    if (hasIncompleteStudent) {
+      toast({ title: 'All students must include a name and phone number.' });
       return;
     }
 
     const timestamp = Date.now();
     let nextId = timestamp;
-    const newStudents = studentNames.map((name) => ({
+    const newStudents = validStudents.map((student) => ({
       id: nextId++,
-      name,
+      name: student.name,
+      phone: student.phone,
       status: 'present' as const,
       notes: 'none',
     }));
@@ -186,7 +318,13 @@ const TakeAttendance = () => {
 
     await simulateApiCall(`${CLASS_API_BASE_URL}/create`, {
       method: 'POST',
-      body: { name: trimmedName, students: studentNames },
+      body: {
+        name: trimmedName,
+        students: validStudents.map((student) => ({
+          name: student.name,
+          phone: student.phone,
+        })),
+      },
     });
 
     setClasses((prev) => [...prev, newClass]);
@@ -205,15 +343,31 @@ const TakeAttendance = () => {
     }
 
     const trimmedName = classFormData.name.trim();
-    const studentNames = parseStudentNames(classFormData.studentsText);
+    const sanitizedStudents = classFormData.students.map((student) => ({
+      key: student.key,
+      existingId: student.existingId,
+      name: student.name.trim(),
+      phone: student.phone.trim(),
+    }));
+
+    const hasIncompleteStudent = sanitizedStudents.some(
+      (student) => !student.name || !student.phone,
+    );
 
     if (!trimmedName) {
       toast({ title: 'Please enter a class name.' });
       return;
     }
 
-    if (studentNames.length === 0) {
-      toast({ title: 'Add at least one student name.' });
+    const validStudents = sanitizedStudents.filter((student) => student.name && student.phone);
+
+    if (validStudents.length === 0) {
+      toast({ title: 'Add at least one student with a phone number.' });
+      return;
+    }
+
+    if (hasIncompleteStudent) {
+      toast({ title: 'All students must include a name and phone number.' });
       return;
     }
 
@@ -223,17 +377,30 @@ const TakeAttendance = () => {
     }
 
     let nextId = Date.now();
-    const updatedStudents = studentNames.map((name) => {
-      const existing = targetClass.students.find(
-        (student) => student.name.toLowerCase() === name.toLowerCase(),
-      );
-      if (existing) {
-        return { ...existing };
+    const updatedStudents: Student[] = validStudents.map((student) => {
+      if (student.existingId != null) {
+        const existing = targetClass.students.find((item) => item.id === student.existingId);
+        if (existing) {
+          return {
+            ...existing,
+            name: student.name,
+            phone: student.phone,
+          };
+        }
+        return {
+          id: student.existingId,
+          name: student.name,
+          phone: student.phone,
+          status: 'present',
+          notes: 'none',
+        };
       }
+
       return {
         id: nextId++,
-        name,
-        status: 'present' as const,
+        name: student.name,
+        phone: student.phone,
+        status: 'present',
         notes: 'none',
       };
     });
@@ -246,7 +413,14 @@ const TakeAttendance = () => {
 
     await simulateApiCall(`${CLASS_API_BASE_URL}/${editingClassId}`, {
       method: 'PUT',
-      body: { name: trimmedName, students: studentNames },
+      body: {
+        name: trimmedName,
+        students: validStudents.map((student) => ({
+          id: student.existingId,
+          name: student.name,
+          phone: student.phone,
+        })),
+      },
     });
 
     setClasses((prev) =>
@@ -418,11 +592,14 @@ const TakeAttendance = () => {
                   <div className="space-y-4">
                     {students.map((student) => (
                       <div key={student.id} className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 bg-muted/30 rounded-lg">
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-3">
                           <div className="w-8 h-8 bg-accent-blue rounded-full flex items-center justify-center text-sm font-medium">
                             {student.name.split(' ').map(n => n[0]).join('')}
                           </div>
-                          <span className="font-medium">{student.name}</span>
+                          <div className="flex flex-col">
+                            <span className="font-medium leading-snug">{student.name}</span>
+                            <span className="text-xs text-muted-foreground">{student.phone}</span>
+                          </div>
                         </div>
                         
                         <RadioGroup 
@@ -480,7 +657,7 @@ const TakeAttendance = () => {
         </Card>
 
         <Dialog open={isCreateDialogOpen} onOpenChange={handleCreateDialogOpenChange}>
-          <DialogContent className="sm:max-w-[500px]">
+          <DialogContent className="sm:max-w-[520px] max-h-[85vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Create class</DialogTitle>
             </DialogHeader>
@@ -496,20 +673,14 @@ const TakeAttendance = () => {
                   placeholder="e.g. Grade 5 - Section A"
                 />
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="create-student-names">Student names</Label>
-                <Textarea
-                  id="create-student-names"
-                  value={classFormData.studentsText}
-                  onChange={(event) =>
-                    setClassFormData((prev) => ({ ...prev, studentsText: event.target.value }))
-                  }
-                  placeholder="Enter one student per line"
-                  className="h-40"
-                />
-                <p className="text-xs text-muted-foreground">
-                  Enter one name per line or separate with commas.
-                </p>
+              <div className="space-y-3">
+                <div className="space-y-1">
+                  <Label>Students</Label>
+                  <p className="text-xs text-muted-foreground">
+                    Provide each student's name and phone number.
+                  </p>
+                </div>
+                {renderStudentFormFields()}
               </div>
               <DialogFooter className="pt-2">
                 <Button
@@ -526,7 +697,7 @@ const TakeAttendance = () => {
         </Dialog>
 
         <Dialog open={isEditDialogOpen} onOpenChange={handleEditDialogOpenChange}>
-          <DialogContent className="sm:max-w-[500px]">
+          <DialogContent className="sm:max-w-[520px] max-h-[85vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Edit class</DialogTitle>
             </DialogHeader>
@@ -542,20 +713,14 @@ const TakeAttendance = () => {
                   placeholder="e.g. Grade 5 - Section A"
                 />
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="edit-student-names">Student names</Label>
-                <Textarea
-                  id="edit-student-names"
-                  value={classFormData.studentsText}
-                  onChange={(event) =>
-                    setClassFormData((prev) => ({ ...prev, studentsText: event.target.value }))
-                  }
-                  placeholder="Enter one student per line"
-                  className="h-40"
-                />
-                <p className="text-xs text-muted-foreground">
-                  Update the roster by adding, editing, or removing names.
-                </p>
+              <div className="space-y-3">
+                <div className="space-y-1">
+                  <Label>Students</Label>
+                  <p className="text-xs text-muted-foreground">
+                    Update the roster by editing names, phone numbers, or removing students.
+                  </p>
+                </div>
+                {renderStudentFormFields()}
               </div>
               <DialogFooter className="pt-2">
                 <Button
