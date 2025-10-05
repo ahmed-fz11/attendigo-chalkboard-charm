@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAuth } from "@/hooks/useAuth";
+import { getAccessToken } from "@/utils/supabase";
 
 type FieldErrors = {
   email?: string;
@@ -69,6 +70,12 @@ const LoginSignup = () => {
         await signup(email.trim(), password);
       } else {
         await login(email.trim(), password);
+      }
+
+      const token = await getAccessToken();
+
+      if (token) {
+        console.info("Supabase access token", token);
       }
 
       navigate("/take-attendance");
