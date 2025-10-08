@@ -24,6 +24,7 @@ const LoginSignup = () => {
   const [password, setPassword] = useState("");
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [formError, setFormError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const navigate = useNavigate();
@@ -52,6 +53,7 @@ const LoginSignup = () => {
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setFormError(null);
+    setSuccessMessage(null);
 
     const submitter = (event.nativeEvent as SubmitEvent).submitter as
       | HTMLButtonElement
@@ -68,9 +70,15 @@ const LoginSignup = () => {
     try {
       if (action === "signup") {
         await signup(email.trim(), password);
-      } else {
-        await login(email.trim(), password);
+        setSuccessMessage(
+          "Success! Check your email to verify your account before logging in.",
+        );
+        setIsLogin(true);
+        setPassword("");
+        return;
       }
+
+      await login(email.trim(), password);
 
       const token = await getAccessToken();
 
@@ -169,6 +177,11 @@ const LoginSignup = () => {
             {formError && (
               <p className="text-sm text-destructive" role="alert">
                 {formError}
+              </p>
+            )}
+            {successMessage && (
+              <p className="text-sm text-emerald-500" role="status">
+                {successMessage}
               </p>
             )}
 
