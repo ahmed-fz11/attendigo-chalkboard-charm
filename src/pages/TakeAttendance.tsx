@@ -1,10 +1,16 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandItem, CommandList } from "@/components/ui/command";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -12,27 +18,30 @@ import Navbar from "@/components/Navbar";
 import attendigoBg2 from "@/assets/attendigo_bg2.png";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "@/hooks/use-toast";
-import { Check, ChevronDown, Pencil, Plus, Trash2 } from "lucide-react";
+import {
+  createClass,
+  fetchTeacherClasses,
+  removeClass,
+  submitAttendance,
+  updateClass,
+  type ApiClass,
+  type ApiStudent,
+} from "@/lib/api";
+import { Check, ChevronDown, Loader2, Pencil, Plus, Trash2 } from "lucide-react";
 
 interface Student {
-  id: number;
-  name: string;
-  phone: string;
-  status: 'present' | 'absent';
-  notes: string;
-}
-
-interface ClassInfo {
   id: string;
   name: string;
-  students: Student[];
+  phone: string;
+  status: "present" | "absent";
+  notes: string;
 }
 
 interface StudentDraft {
   key: string;
   name: string;
   phone: string;
-  existingId?: number;
+  existingId?: string;
 }
 
 interface ClassFormState {
@@ -40,62 +49,30 @@ interface ClassFormState {
   students: StudentDraft[];
 }
 
-const CLASS_API_BASE_URL = "https://api.example.com/classes";
-
-const generateDraftKey = () => `student-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+const generateDraftKey = () =>
+  `student-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
 const createStudentDraft = (overrides?: Partial<StudentDraft>): StudentDraft => ({
   key: overrides?.key ?? generateDraftKey(),
-  name: overrides?.name ?? '',
-  phone: overrides?.phone ?? '',
+  name: overrides?.name ?? "",
+  phone: overrides?.phone ?? "",
   existingId: overrides?.existingId,
 });
 
-const INITIAL_CLASSES: ClassInfo[] = [
-  {
-    id: "grade8-b",
-    name: "Grade 8 - Section B",
-    students: [
-      { id: 1, name: "Emma Johnson", phone: "555-0111", status: "present", notes: "none" },
-      { id: 2, name: "Michael Brown", phone: "555-0112", status: "absent", notes: "Left early" },
-      { id: 3, name: "Sarah Davis", phone: "555-0113", status: "present", notes: "none" },
-      { id: 4, name: "Alex Wilson", phone: "555-0114", status: "absent", notes: "Sick" },
-      { id: 5, name: "Jessica Miller", phone: "555-0115", status: "present", notes: "none" },
-    ],
-  },
-  {
-    id: "grade7-a",
-    name: "Grade 7 - Section A",
-    students: [
-      { id: 101, name: "Liam Carter", phone: "555-0211", status: "present", notes: "none" },
-      { id: 102, name: "Olivia Reed", phone: "555-0212", status: "present", notes: "none" },
-      { id: 103, name: "Noah Brooks", phone: "555-0213", status: "absent", notes: "Sick" },
-      { id: 104, name: "Ava Morgan", phone: "555-0214", status: "present", notes: "none" },
-    ],
-  },
-  {
-    id: "grade6-c",
-    name: "Grade 6 - Section C",
-    students: [
-      { id: 201, name: "Ethan Cooper", phone: "555-0311", status: "present", notes: "none" },
-      { id: 202, name: "Mia Flores", phone: "555-0312", status: "present", notes: "none" },
-      { id: 203, name: "Benjamin Hughes", phone: "555-0313", status: "absent", notes: "Travel" },
-    ],
-  },
-];
-
-const cloneStudents = (list: Student[]) => list.map((student) => ({ ...student }));
-
-const simulateApiCall = async (endpoint: string, payload: unknown) => {
-  // TODO: replace with real API integration once endpoints are available
-  console.debug(`API placeholder → ${endpoint}`, payload);
-  await Promise.resolve();
-};
+const mapApiStudentToAttendance = (student: ApiStudent): Student => ({
+  id: student.id,
+  name: student.full_name,
+  phone: student.parent_phone,
+  status: "present",
+  notes: "none",
+});
 
 const TakeAttendance = () => {
-  const { logout } = useAuth();
-  const [classes, setClasses] = useState<ClassInfo[]>(INITIAL_CLASSES);
-  const [selectedClass, setSelectedClass] = useState('');
+  const { user, logout, loading: authLoading } = useAuth();
+  const teacherId = user?.id ?? null;
+
+  const [classes, setClasses] = useState<ApiClass[]>([]);
+  const [selectedClass, setSelectedClass] = useState("");
   const [students, setStudents] = useState<Student[]>([]);
   const [submitted, setSubmitted] = useState(false);
   const [classSelectorOpen, setClassSelectorOpen] = useState(false);
@@ -103,38 +80,129 @@ const TakeAttendance = () => {
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [editingClassId, setEditingClassId] = useState<string | null>(null);
   const [classFormData, setClassFormData] = useState<ClassFormState>(() => ({
-    name: '',
+    name: "",
     students: [createStudentDraft()],
   }));
+  const [isLoadingClasses, setIsLoadingClasses] = useState(false);
+  const [isSavingClass, setIsSavingClass] = useState(false);
+  const [isSubmittingAttendance, setIsSubmittingAttendance] = useState(false);
+  const [isDeletingClassId, setIsDeletingClassId] = useState<string | null>(null);
+  const [classesError, setClassesError] = useState<string | null>(null);
 
   const selectedClassName = useMemo(
-    () => classes.find((cls) => cls.id === selectedClass)?.name ?? '',
+    () => classes.find((cls) => cls.id === selectedClass)?.name ?? "",
     [classes, selectedClass],
   );
 
-  const updateStudentStatus = (studentId: number, status: 'present' | 'absent') => {
+  const loadClasses = useCallback(async (): Promise<ApiClass[]> => {
+    if (!teacherId) {
+      return [];
+    }
+
+    setIsLoadingClasses(true);
+    setClassesError(null);
+
+    try {
+      const data = await fetchTeacherClasses(teacherId);
+      const classList = data.classes ?? [];
+      setClasses(classList);
+      return classList;
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to load classes.";
+      setClasses([]);
+      setClassesError(message);
+      toast({
+        title: "Unable to fetch classes",
+        description: message,
+        variant: "destructive",
+      });
+      return [];
+    } finally {
+      setIsLoadingClasses(false);
+    }
+  }, [teacherId]);
+
+  useEffect(() => {
+    if (authLoading) {
+      return;
+    }
+
+    if (!teacherId) {
+      setClasses([]);
+      setSelectedClass("");
+      setStudents([]);
+      toast({
+        title: "Missing teacher profile",
+        description: "No teacher information is available. Please sign in again.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    loadClasses();
+  }, [authLoading, teacherId, loadClasses]);
+
+  useEffect(() => {
+    if (classes.length === 0) {
+      setSelectedClass("");
+      setStudents([]);
+      return;
+    }
+
+    setSelectedClass((current) => {
+      if (current && classes.some((cls) => cls.id === current)) {
+        return current;
+      }
+      return classes[0].id;
+    });
+  }, [classes]);
+
+  useEffect(() => {
+    if (!selectedClass) {
+      setStudents([]);
+      return;
+    }
+
+    const classInfo = classes.find((cls) => cls.id === selectedClass);
+    if (!classInfo) {
+      setStudents([]);
+      return;
+    }
+
+    const activeStudents = classInfo.students
+      .filter((student) => student.active)
+      .map(mapApiStudentToAttendance);
+
+    setStudents(activeStudents);
+    setSubmitted(false);
+  }, [classes, selectedClass]);
+
+  const updateStudentStatus = (studentId: string, status: "present" | "absent") => {
     setStudents((prev) =>
-      prev.map((student) => (student.id === studentId ? { ...student, status } : student)),
+      prev.map((student) =>
+        student.id === studentId ? { ...student, status } : student,
+      ),
     );
   };
 
-  const updateStudentNotes = (studentId: number, notes: string) => {
+  const updateStudentNotes = (studentId: string, notes: string) => {
     setStudents((prev) =>
-      prev.map((student) => (student.id === studentId ? { ...student, notes } : student)),
+      prev.map((student) =>
+        student.id === studentId ? { ...student, notes } : student,
+      ),
     );
   };
 
   const handleClassSelect = (classId: string) => {
     setSelectedClass(classId);
-    const classInfo = classes.find((cls) => cls.id === classId);
-    setStudents(classInfo ? cloneStudents(classInfo.students) : []);
-    setSubmitted(false);
     setClassSelectorOpen(false);
+    setSubmitted(false);
   };
 
   const resetClassForm = () => {
     setClassFormData({
-      name: '',
+      name: "",
       students: [createStudentDraft()],
     });
   };
@@ -149,19 +217,22 @@ const TakeAttendance = () => {
     if (!classInfo) {
       return;
     }
+
     setEditingClassId(classId);
     setClassFormData({
       name: classInfo.name,
       students:
-        classInfo.students.length > 0
-          ? classInfo.students.map((student) =>
-              createStudentDraft({
-                key: `existing-${student.id}`,
-                name: student.name,
-                phone: student.phone,
-                existingId: student.id,
-              }),
-            )
+        classInfo.students.filter((student) => student.active).length > 0
+          ? classInfo.students
+              .filter((student) => student.active)
+              .map((student) =>
+                createStudentDraft({
+                  key: `existing-${student.id}`,
+                  name: student.full_name,
+                  phone: student.parent_phone,
+                  existingId: student.id,
+                }),
+              )
           : [createStudentDraft()],
     });
     setIsEditDialogOpen(true);
@@ -182,7 +253,7 @@ const TakeAttendance = () => {
     }
   };
 
-  const updateFormStudent = (key: string, field: 'name' | 'phone', value: string) => {
+  const updateFormStudent = (key: string, field: "name" | "phone", value: string) => {
     setClassFormData((prev) => ({
       ...prev,
       students: prev.students.map((student) =>
@@ -210,7 +281,275 @@ const TakeAttendance = () => {
     });
   };
 
-  const renderStudentFormFields = () => (
+  const validateClassForm = () => {
+    const trimmedName = classFormData.name.trim();
+    const sanitizedStudents = classFormData.students.map((student) => ({
+      key: student.key,
+      existingId: student.existingId,
+      name: student.name.trim(),
+      phone: student.phone.trim(),
+    }));
+
+    if (!trimmedName) {
+      toast({ title: "Please enter a class name." });
+      return null;
+    }
+
+    const validStudents = sanitizedStudents.filter(
+      (student) => student.name && student.phone,
+    );
+
+    if (validStudents.length === 0) {
+      toast({ title: "Add at least one student with a phone number." });
+      return null;
+    }
+
+    const hasIncompleteStudent = sanitizedStudents.some(
+      (student) => !student.name || !student.phone,
+    );
+
+    if (hasIncompleteStudent) {
+      toast({ title: "All students must include a name and phone number." });
+      return null;
+    }
+
+    return {
+      trimmedName,
+      validStudents,
+    };
+  };
+
+  const handleCreateClassSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!teacherId) {
+      toast({
+        title: "Missing teacher profile",
+        description: "No teacher information is available. Please sign in again.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const validation = validateClassForm();
+    if (!validation) {
+      return;
+    }
+
+    setIsSavingClass(true);
+    try {
+      const response = await createClass({
+        name: validation.trimmedName,
+        teacher_user_id: teacherId,
+        students: validation.validStudents.map((student) => ({
+          full_name: student.name,
+          parent_phone: student.phone,
+        })),
+      });
+
+      toast({
+        title: "Class created",
+        description: response.message ?? "The class was added successfully.",
+      });
+
+      const latestClasses = await loadClasses();
+
+      if (response.class_id) {
+        const exists = latestClasses.some((cls) => cls.id === response.class_id);
+        if (exists) {
+          setSelectedClass(response.class_id);
+        }
+      }
+
+      setIsCreateDialogOpen(false);
+      resetClassForm();
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to create class.";
+      toast({
+        title: "Unable to create class",
+        description: message,
+        variant: "destructive",
+      });
+    } finally {
+      setIsSavingClass(false);
+    }
+  };
+
+  const handleEditClassSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!editingClassId) {
+      return;
+    }
+
+    if (!teacherId) {
+      toast({
+        title: "Missing teacher profile",
+        description: "No teacher information is available. Please sign in again.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const validation = validateClassForm();
+    if (!validation) {
+      return;
+    }
+
+    setIsSavingClass(true);
+    try {
+      const existingStudentsPayload = validation.validStudents
+        .filter((student) => student.existingId)
+        .map((student) => ({
+          id: student.existingId,
+          full_name: student.name,
+          parent_phone: student.phone,
+          active: true,
+        }));
+
+      const newStudentsPayload = validation.validStudents
+        .filter((student) => !student.existingId)
+        .map((student) => ({
+          full_name: student.name,
+          parent_phone: student.phone,
+        }));
+
+      const payload: Parameters<typeof updateClass>[1] = {
+        name: validation.trimmedName,
+        teacher_user_id: teacherId,
+      };
+
+      if (existingStudentsPayload.length > 0) {
+        payload.students = existingStudentsPayload;
+      }
+
+      if (newStudentsPayload.length > 0) {
+        payload.new_students = newStudentsPayload;
+      }
+
+      const response = await updateClass(editingClassId, payload);
+
+      toast({
+        title: "Class updated",
+        description:
+          response.message ??
+          (newStudentsPayload.length > 0
+            ? `${newStudentsPayload.length} student(s) added successfully.`
+            : "The class was updated successfully."),
+      });
+
+      await loadClasses();
+      setSelectedClass(editingClassId);
+      setIsEditDialogOpen(false);
+      setEditingClassId(null);
+      resetClassForm();
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to update class.";
+      toast({
+        title: "Unable to update class",
+        description: message,
+        variant: "destructive",
+      });
+    } finally {
+      setIsSavingClass(false);
+    }
+  };
+
+  const handleDeleteClass = async (classId: string) => {
+    const targetClass = classes.find((cls) => cls.id === classId);
+    if (!targetClass) {
+      return;
+    }
+
+    setIsDeletingClassId(classId);
+    try {
+      const response = await removeClass(classId);
+      toast({
+        title: "Class deleted",
+        description: response.message ?? `${targetClass.name} was removed.`,
+      });
+
+      await loadClasses();
+      if (selectedClass === classId) {
+        setSelectedClass("");
+        setStudents([]);
+        setSubmitted(false);
+      }
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to delete class.";
+      toast({
+        title: "Unable to delete class",
+        description: message,
+        variant: "destructive",
+      });
+    } finally {
+      setIsDeletingClassId(null);
+    }
+  };
+
+  const handleSubmit = async () => {
+    if (!selectedClass) {
+      toast({
+        title: "Select a class",
+        description: "Choose a class before submitting attendance.",
+      });
+      return;
+    }
+
+    if (!teacherId) {
+      toast({
+        title: "Missing teacher profile",
+        description: "No teacher information is available. Please sign in again.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (students.length === 0) {
+      toast({
+        title: "No students to submit",
+        description: "Add students to this class before submitting attendance.",
+      });
+      return;
+    }
+
+    setIsSubmittingAttendance(true);
+    try {
+      const response = await submitAttendance({
+        class_id: selectedClass,
+        marked_by: teacherId,
+        date: new Date().toISOString().slice(0, 10),
+        records: students.map((student) => ({
+          student_id: student.id,
+          status: student.status,
+          note: student.notes === "none" ? null : student.notes,
+        })),
+      });
+
+      setSubmitted(true);
+      toast({
+        title: "Attendance submitted",
+        description: response.message ?? "Records saved successfully.",
+      });
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to submit attendance.";
+      toast({
+        title: "Unable to submit attendance",
+        description: message,
+        variant: "destructive",
+      });
+    } finally {
+      setIsSubmittingAttendance(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    await logout();
+  };
+
+  const renderStudentFormFields = ({ disabled = false }: { disabled?: boolean } = {}) => (
     <div className="space-y-4">
       {classFormData.students.map((student, index) => (
         <div
@@ -226,6 +565,7 @@ const TakeAttendance = () => {
                 size="sm"
                 className="h-8 px-2 text-xs text-destructive hover:text-destructive"
                 onClick={() => handleRemoveStudentDraft(student.key)}
+                disabled={disabled}
               >
                 <Trash2 className="h-3.5 w-3.5" />
                 <span className="hidden sm:inline">Remove</span>
@@ -239,9 +579,10 @@ const TakeAttendance = () => {
                 id={`student-name-${student.key}`}
                 value={student.name}
                 onChange={(event) =>
-                  updateFormStudent(student.key, 'name', event.target.value)
+                  updateFormStudent(student.key, "name", event.target.value)
                 }
                 placeholder="e.g. Priya Agarwal"
+                disabled={disabled}
               />
             </div>
             <div className="space-y-1.5">
@@ -250,9 +591,10 @@ const TakeAttendance = () => {
                 id={`student-phone-${student.key}`}
                 value={student.phone}
                 onChange={(event) =>
-                  updateFormStudent(student.key, 'phone', event.target.value)
+                  updateFormStudent(student.key, "phone", event.target.value)
                 }
-                placeholder="e.g. 555-123-4567"
+                placeholder="e.g. +923001234567"
+                disabled={disabled}
               />
             </div>
           </div>
@@ -263,6 +605,7 @@ const TakeAttendance = () => {
         variant="outline"
         className="w-full"
         onClick={handleAddStudentDraft}
+        disabled={disabled}
       >
         <Plus className="h-4 w-4" />
         Add student
@@ -270,217 +613,18 @@ const TakeAttendance = () => {
     </div>
   );
 
-  const handleCreateClassSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    const trimmedName = classFormData.name.trim();
-    const sanitizedStudents = classFormData.students.map((student) => ({
-      key: student.key,
-      name: student.name.trim(),
-      phone: student.phone.trim(),
-    }));
-
-    const hasIncompleteStudent = sanitizedStudents.some(
-      (student) => !student.name || !student.phone,
-    );
-
-    if (!trimmedName) {
-      toast({ title: 'Please enter a class name.' });
-      return;
-    }
-
-    const validStudents = sanitizedStudents.filter((student) => student.name && student.phone);
-
-    if (validStudents.length === 0) {
-      toast({ title: 'Add at least one student with a phone number.' });
-      return;
-    }
-
-    if (hasIncompleteStudent) {
-      toast({ title: 'All students must include a name and phone number.' });
-      return;
-    }
-
-    const timestamp = Date.now();
-    let nextId = timestamp;
-    const newStudents = validStudents.map((student) => ({
-      id: nextId++,
-      name: student.name,
-      phone: student.phone,
-      status: 'present' as const,
-      notes: 'none',
-    }));
-
-    const newClass: ClassInfo = {
-      id: `class-${timestamp}`,
-      name: trimmedName,
-      students: newStudents,
-    };
-
-    await simulateApiCall(`${CLASS_API_BASE_URL}/create`, {
-      method: 'POST',
-      body: {
-        name: trimmedName,
-        students: validStudents.map((student) => ({
-          name: student.name,
-          phone: student.phone,
-        })),
-      },
-    });
-
-    setClasses((prev) => [...prev, newClass]);
-    setSelectedClass(newClass.id);
-    setStudents(cloneStudents(newStudents));
-    setSubmitted(false);
-    setIsCreateDialogOpen(false);
-    resetClassForm();
-    toast({ title: 'Class created', description: `${trimmedName} was added successfully.` });
-  };
-
-  const handleEditClassSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (!editingClassId) {
-      return;
-    }
-
-    const trimmedName = classFormData.name.trim();
-    const sanitizedStudents = classFormData.students.map((student) => ({
-      key: student.key,
-      existingId: student.existingId,
-      name: student.name.trim(),
-      phone: student.phone.trim(),
-    }));
-
-    const hasIncompleteStudent = sanitizedStudents.some(
-      (student) => !student.name || !student.phone,
-    );
-
-    if (!trimmedName) {
-      toast({ title: 'Please enter a class name.' });
-      return;
-    }
-
-    const validStudents = sanitizedStudents.filter((student) => student.name && student.phone);
-
-    if (validStudents.length === 0) {
-      toast({ title: 'Add at least one student with a phone number.' });
-      return;
-    }
-
-    if (hasIncompleteStudent) {
-      toast({ title: 'All students must include a name and phone number.' });
-      return;
-    }
-
-    const targetClass = classes.find((cls) => cls.id === editingClassId);
-    if (!targetClass) {
-      return;
-    }
-
-    let nextId = Date.now();
-    const updatedStudents: Student[] = validStudents.map((student) => {
-      if (student.existingId != null) {
-        const existing = targetClass.students.find((item) => item.id === student.existingId);
-        if (existing) {
-          return {
-            ...existing,
-            name: student.name,
-            phone: student.phone,
-          };
-        }
-        return {
-          id: student.existingId,
-          name: student.name,
-          phone: student.phone,
-          status: 'present',
-          notes: 'none',
-        };
-      }
-
-      return {
-        id: nextId++,
-        name: student.name,
-        phone: student.phone,
-        status: 'present',
-        notes: 'none',
-      };
-    });
-
-    const updatedClass: ClassInfo = {
-      ...targetClass,
-      name: trimmedName,
-      students: updatedStudents,
-    };
-
-    await simulateApiCall(`${CLASS_API_BASE_URL}/${editingClassId}`, {
-      method: 'PUT',
-      body: {
-        name: trimmedName,
-        students: validStudents.map((student) => ({
-          id: student.existingId,
-          name: student.name,
-          phone: student.phone,
-        })),
-      },
-    });
-
-    setClasses((prev) =>
-      prev.map((cls) => (cls.id === editingClassId ? updatedClass : cls)),
-    );
-
-    if (selectedClass === editingClassId) {
-      setStudents(cloneStudents(updatedStudents));
-      setSubmitted(false);
-    }
-
-    setIsEditDialogOpen(false);
-    setEditingClassId(null);
-    resetClassForm();
-    toast({ title: 'Class updated', description: `${trimmedName} was updated successfully.` });
-  };
-
-  const handleDeleteClass = async (classId: string) => {
-    const targetClass = classes.find((cls) => cls.id === classId);
-    if (!targetClass) {
-      return;
-    }
-
-    await simulateApiCall(`${CLASS_API_BASE_URL}/${classId}`, {
-      method: 'DELETE',
-    });
-
-    setClasses((prev) => prev.filter((cls) => cls.id !== classId));
-    if (selectedClass === classId) {
-      setSelectedClass('');
-      setStudents([]);
-      setSubmitted(false);
-    }
-    toast({ title: 'Class deleted', description: `${targetClass.name} was removed.` });
-  };
-
-  const handleSubmit = () => {
-    setSubmitted(true);
-    toast({
-      title: "Success!",
-      description: "Attendance submitted and parents notified successfully!",
-    });
-  };
-
-  const handleLogout = async () => {
-    await logout();
-  };
-
   return (
-    <div 
+    <div
       className="min-h-screen"
       style={{
         backgroundImage: `url(${attendigoBg2})`,
-        backgroundSize: 'cover',
-        backgroundPosition: 'center',
-        backgroundRepeat: 'no-repeat'
+        backgroundSize: "cover",
+        backgroundPosition: "center",
+        backgroundRepeat: "no-repeat",
       }}
     >
       <Navbar showReportsButton onLogout={handleLogout} />
-      
+
       <div className="container mx-auto p-4 space-y-6">
         <Card className="backdrop-blur-sm bg-card/95 shadow-lg">
           <CardHeader className="space-y-4">
@@ -496,7 +640,7 @@ const TakeAttendance = () => {
                       className="flex w-full items-center justify-between"
                     >
                       <span className="truncate">
-                        {selectedClassName || 'Select a class'}
+                        {selectedClassName || (isLoadingClasses ? "Loading..." : "Select a class")}
                       </span>
                       <ChevronDown className="h-4 w-4 opacity-60" />
                     </Button>
@@ -504,7 +648,9 @@ const TakeAttendance = () => {
                   <PopoverContent className="w-[320px] p-0" align="start">
                     <Command>
                       <CommandList>
-                        <CommandEmpty>No classes found.</CommandEmpty>
+                        <CommandEmpty>
+                          {isLoadingClasses ? "Loading classes..." : "No classes found."}
+                        </CommandEmpty>
                         <CommandGroup>
                           {classes.map((cls) => (
                             <CommandItem
@@ -548,8 +694,13 @@ const TakeAttendance = () => {
                                       setClassSelectorOpen(false);
                                       handleDeleteClass(cls.id);
                                     }}
+                                    disabled={isDeletingClassId === cls.id}
                                   >
-                                    <Trash2 className="h-3.5 w-3.5" />
+                                    {isDeletingClassId === cls.id ? (
+                                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                    ) : (
+                                      <Trash2 className="h-3.5 w-3.5" />
+                                    )}
                                     <span className="hidden sm:inline">Delete</span>
                                   </Button>
                                 </div>
@@ -574,37 +725,62 @@ const TakeAttendance = () => {
                 Create class
               </Button>
             </div>
+            {classesError && (
+              <div className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
+                {classesError}
+              </div>
+            )}
           </CardHeader>
-          
+
           <CardContent>
             <div className="overflow-x-auto">
               <div className="min-w-full">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4 font-semibold text-primary">
+                <div className="grid grid-cols-1 gap-4 font-semibold text-primary md:grid-cols-3 md:gap-4 md:pb-4">
                   <div>Student Name</div>
                   <div>Status</div>
                   <div>Notes</div>
                 </div>
-                {students.length === 0 ? (
+                {isLoadingClasses ? (
+                  <div className="rounded-lg border border-dashed border-muted-foreground/40 p-6 text-center text-sm text-muted-foreground">
+                    <Loader2 className="mx-auto mb-2 h-5 w-5 animate-spin text-primary" />
+                    Loading classes...
+                  </div>
+                ) : !selectedClass ? (
+                  <div className="rounded-lg border border-dashed border-muted-foreground/40 p-6 text-center text-sm text-muted-foreground">
+                    No classes available yet. Create a class to get started.
+                  </div>
+                ) : students.length === 0 ? (
                   <div className="rounded-lg border border-dashed border-muted-foreground/40 p-6 text-center text-sm text-muted-foreground">
                     No students available for this class yet. Add students from the class menu above.
                   </div>
                 ) : (
                   <div className="space-y-4">
                     {students.map((student) => (
-                      <div key={student.id} className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 bg-muted/30 rounded-lg">
+                      <div
+                        key={student.id}
+                        className="grid grid-cols-1 gap-4 rounded-lg bg-muted/30 p-4 md:grid-cols-3 md:gap-4"
+                      >
                         <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 bg-accent-blue rounded-full flex items-center justify-center text-sm font-medium">
-                            {student.name.split(' ').map(n => n[0]).join('')}
+                          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-accent-blue text-sm font-medium">
+                            {student.name
+                              .split(" ")
+                              .filter(Boolean)
+                              .map((part) => part[0])
+                              .join("")
+                              .slice(0, 2)
+                              .toUpperCase()}
                           </div>
                           <div className="flex flex-col">
                             <span className="font-medium leading-snug">{student.name}</span>
                             <span className="text-xs text-muted-foreground">{student.phone}</span>
                           </div>
                         </div>
-                        
-                        <RadioGroup 
-                          value={student.status} 
-                          onValueChange={(value) => updateStudentStatus(student.id, value as 'present' | 'absent')}
+
+                        <RadioGroup
+                          value={student.status}
+                          onValueChange={(value) =>
+                            updateStudentStatus(student.id, value as "present" | "absent")
+                          }
                           className="flex gap-4"
                         >
                           <div className="flex items-center space-x-2">
@@ -616,8 +792,11 @@ const TakeAttendance = () => {
                             <Label htmlFor={`absent-${student.id}`}>Absent</Label>
                           </div>
                         </RadioGroup>
-                        
-                        <Select value={student.notes} onValueChange={(value) => updateStudentNotes(student.id, value)}>
+
+                        <Select
+                          value={student.notes}
+                          onValueChange={(value) => updateStudentNotes(student.id, value)}
+                        >
                           <SelectTrigger>
                             <SelectValue placeholder="Select notes..." />
                           </SelectTrigger>
@@ -635,23 +814,30 @@ const TakeAttendance = () => {
                 )}
               </div>
             </div>
-            
+
             {submitted && (
-              <div className="mt-6 p-4 bg-accent-green/20 border border-accent-green/30 rounded-lg">
-                <p className="text-secondary font-medium">
-                  Attendance submitted and parents notified successfully!
+              <div className="mt-6 rounded-lg border border-accent-green/30 bg-accent-green/20 p-4">
+                <p className="font-medium text-secondary">
+                  Attendance submitted successfully.
                 </p>
               </div>
             )}
-            
-            <Button 
+
+            <Button
               onClick={handleSubmit}
-              className="w-full mt-6"
+              className="mt-6 w-full"
               variant="secondary"
               size="lg"
-              disabled={!selectedClass}
+              disabled={!selectedClass || students.length === 0 || isSubmittingAttendance}
             >
-              Submit & Notify Parents
+              {isSubmittingAttendance ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Submitting...
+                </>
+              ) : (
+                "Submit"
+              )}
             </Button>
           </CardContent>
         </Card>
@@ -671,6 +857,7 @@ const TakeAttendance = () => {
                     setClassFormData((prev) => ({ ...prev, name: event.target.value }))
                   }
                   placeholder="e.g. Grade 5 - Section A"
+                  disabled={isSavingClass}
                 />
               </div>
               <div className="space-y-3">
@@ -680,17 +867,27 @@ const TakeAttendance = () => {
                     Provide each student's name and phone number.
                   </p>
                 </div>
-                {renderStudentFormFields()}
+                {renderStudentFormFields({ disabled: isSavingClass })}
               </div>
               <DialogFooter className="pt-2">
                 <Button
                   type="button"
                   variant="outline"
                   onClick={() => handleCreateDialogOpenChange(false)}
+                  disabled={isSavingClass}
                 >
                   Cancel
                 </Button>
-                <Button type="submit">Save class</Button>
+                <Button type="submit" disabled={isSavingClass}>
+                  {isSavingClass ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Saving...
+                    </>
+                  ) : (
+                    "Save class"
+                  )}
+                </Button>
               </DialogFooter>
             </form>
           </DialogContent>
@@ -711,26 +908,37 @@ const TakeAttendance = () => {
                     setClassFormData((prev) => ({ ...prev, name: event.target.value }))
                   }
                   placeholder="e.g. Grade 5 - Section A"
+                  disabled={isSavingClass}
                 />
               </div>
               <div className="space-y-3">
                 <div className="space-y-1">
                   <Label>Students</Label>
                   <p className="text-xs text-muted-foreground">
-                    Update the roster by editing names, phone numbers, or removing students.
+                    Update the roster by editing names or phone numbers, or remove students.
                   </p>
                 </div>
-                {renderStudentFormFields()}
+                {renderStudentFormFields({ disabled: isSavingClass })}
               </div>
               <DialogFooter className="pt-2">
                 <Button
                   type="button"
                   variant="outline"
                   onClick={() => handleEditDialogOpenChange(false)}
+                  disabled={isSavingClass}
                 >
                   Cancel
                 </Button>
-                <Button type="submit">Save changes</Button>
+                <Button type="submit" disabled={isSavingClass}>
+                  {isSavingClass ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Saving...
+                    </>
+                  ) : (
+                    "Save changes"
+                  )}
+                </Button>
               </DialogFooter>
             </form>
           </DialogContent>
