@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import Navbar from "@/components/Navbar";
@@ -10,11 +9,14 @@ import {
   fetchDailyReport,
   fetchReportSummary,
   fetchTeacherClasses,
+  fetchReportsInsights,
   type ApiClass,
   type DailyReportResponse,
   type ReportSummaryResponse,
+  type ReportsWebhookBasePayload,
 } from "@/lib/api";
-import { Download, Clock, Calendar, Loader2 } from "lucide-react";
+import { startOfWeek, endOfWeek, startOfMonth, endOfMonth, format, isAfter } from "date-fns";
+import { Loader2, Sparkles } from "lucide-react";
 
 type ReportRange = "weekly" | "monthly";
 
@@ -36,6 +38,27 @@ const formatDateLabel = (value: string) => {
 
 const rangeToDays = (range: ReportRange) => (range === "weekly" ? 7 : 30);
 
+const computeDateRange = (range: ReportRange) => {
+  const now = new Date();
+  const clamp = (date: Date) => (isAfter(date, now) ? now : date);
+
+  if (range === "weekly") {
+    const start = startOfWeek(now, { weekStartsOn: 1 });
+    const end = clamp(endOfWeek(now, { weekStartsOn: 1 }));
+    return {
+      startDate: format(start, "yyyy-MM-dd"),
+      endDate: format(end, "yyyy-MM-dd"),
+    };
+  }
+
+  const start = startOfMonth(now);
+  const end = clamp(endOfMonth(now));
+  return {
+    startDate: format(start, "yyyy-MM-dd"),
+    endDate: format(end, "yyyy-MM-dd"),
+  };
+};
+
 const Reports = () => {
   const { user, logout, loading: authLoading } = useAuth();
   const teacherId = user?.id ?? null;
@@ -45,14 +68,32 @@ const Reports = () => {
   const [selectedClassId, setSelectedClassId] = useState("");
   const [summary, setSummary] = useState<ReportSummaryResponse | null>(null);
   const [dailyLogs, setDailyLogs] = useState<DailyReportResponse["logs"]>([]);
+  const [insights, setInsights] = useState<string[]>([]);
 
   const [isLoadingClasses, setIsLoadingClasses] = useState(false);
   const [isLoadingSummary, setIsLoadingSummary] = useState(false);
   const [isLoadingLogs, setIsLoadingLogs] = useState(false);
+  const [isLoadingInsights, setIsLoadingInsights] = useState(false);
 
   const [classesError, setClassesError] = useState<string | null>(null);
   const [summaryError, setSummaryError] = useState<string | null>(null);
   const [logsError, setLogsError] = useState<string | null>(null);
+  const [insightsError, setInsightsError] = useState<string | null>(null);
+
+  const dateRange = useMemo(() => computeDateRange(reportRange), [reportRange]);
+  const buildWebhookPayload = useCallback((): ReportsWebhookBasePayload | null => {
+    if (!teacherId || !selectedClassId) {
+      return null;
+    }
+
+    return {
+      teacher_user_id: teacherId,
+      class_id: selectedClassId,
+      range: reportRange,
+      start_date: dateRange.startDate,
+      end_date: dateRange.endDate,
+    };
+  }, [teacherId, selectedClassId, reportRange, dateRange.startDate, dateRange.endDate]);
 
   const handleLogout = async () => {
     await logout();
@@ -196,6 +237,33 @@ const Reports = () => {
     loadDailyLogs(selectedClassId, reportRange);
   }, [selectedClassId, reportRange, loadSummary, loadDailyLogs]);
 
+  useEffect(() => {
+    const payload = buildWebhookPayload();
+
+    if (!payload) {
+      setInsights([]);
+      setInsightsError(null);
+      return;
+    }
+
+    setIsLoadingInsights(true);
+    setInsightsError(null);
+
+    fetchReportsInsights(payload)
+      .then((data) => {
+        setInsights(Array.isArray(data.insights) ? data.insights : []);
+      })
+      .catch((error) => {
+        const message =
+          error instanceof Error ? error.message : "Failed to load insights.";
+        setInsights([]);
+        setInsightsError(message);
+      })
+      .finally(() => {
+        setIsLoadingInsights(false);
+      });
+  }, [buildWebhookPayload]);
+
   const selectedClassName = useMemo(
     () => classes.find((cls) => cls.id === selectedClassId)?.name ?? "",
     [classes, selectedClassId],
@@ -249,17 +317,6 @@ const Reports = () => {
       },
     ];
   }, [summary, reportRange]);
-
-  const aiInsights = [
-    {
-      icon: <Clock className="w-5 h-5 text-accent-orange" />,
-      text: "Late arrivals spike on Mondays",
-    },
-    {
-      icon: <Calendar className="w-5 h-5 text-accent-blue" />,
-      text: "Absences higher on holidays",
-    },
-  ];
 
   return (
     <div
@@ -328,12 +385,10 @@ const Reports = () => {
                   ))}
                 </div>
 
-                {summary && (
-                  <p className="mb-6 text-sm text-muted-foreground">
-                    Reporting window: {formatDateLabel(summary.from_date)} –{" "}
-                    {formatDateLabel(summary.to_date)}
-                  </p>
-                )}
+                <p className="mb-6 text-sm text-muted-foreground">
+                  Reporting window: {formatDateLabel(dateRange.startDate)} –{" "}
+                  {formatDateLabel(dateRange.endDate)}
+                </p>
 
                 {/* Daily Logs Table */}
                 <div>
@@ -410,26 +465,33 @@ const Reports = () => {
                 <CardTitle className="text-lg text-primary">AI Insights</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                {aiInsights.map((insight, index) => (
-                  <div key={index} className="flex items-start gap-3 rounded-lg bg-muted/30 p-3">
-                    {insight.icon}
-                    <span className="text-sm">{insight.text}</span>
+                {isLoadingInsights ? (
+                  <div className="flex items-center justify-center gap-2 py-4 text-sm text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                    Generating insights...
                   </div>
-                ))}
+                ) : insightsError ? (
+                  <div className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
+                    {insightsError}
+                  </div>
+                ) : insights.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">
+                    No insights available for this range yet.
+                  </p>
+                ) : (
+                  insights.map((insight, index) => (
+                    <div
+                      key={index}
+                      className="flex items-start gap-3 rounded-lg bg-muted/30 p-3"
+                    >
+                      <Sparkles className="mt-0.5 h-4 w-4 text-accent-orange" />
+                      <span className="text-sm">{insight}</span>
+                    </div>
+                  ))
+                )}
               </CardContent>
             </Card>
 
-            {/* Download Buttons */}
-            <div className="space-y-3">
-              <Button variant="secondary" className="w-full" size="lg">
-                <Download className="mr-2 h-4 w-4" />
-                Download PDF
-              </Button>
-              <Button variant="outline" className="w-full" size="lg">
-                <Download className="mr-2 h-4 w-4" />
-                Download CSV
-              </Button>
-            </div>
           </div>
         </div>
       </div>

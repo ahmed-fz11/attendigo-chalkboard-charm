@@ -1,13 +1,24 @@
-const DEFAULT_API_BASE_URL = import.meta.env.DEV
-  ? "/api"
-  : "https://web-production-166aa.up.railway.app";
+const resolveDefaultBaseUrl = () => {
+  const envBase =
+    import.meta.env.VITE_API_BASE_URL ??
+    import.meta.env.VITE_REACT_APP_API_BASE_URL;
 
-const rawBaseUrl =
-  import.meta.env.VITE_API_BASE_URL ??
-  import.meta.env.VITE_REACT_APP_API_BASE_URL ??
-  DEFAULT_API_BASE_URL;
+  if (envBase) {
+    return envBase;
+  }
 
-export const API_BASE_URL = rawBaseUrl.replace(/\/+$/, "");
+  if (import.meta.env.DEV) {
+    return "/api";
+  }
+
+  if (typeof window !== "undefined") {
+    return "/api";
+  }
+
+  return "https://web-production-166aa.up.railway.app";
+};
+
+export const API_BASE_URL = resolveDefaultBaseUrl().replace(/\/+$/, "");
 
 export interface ApiStudent {
   id: string;
@@ -137,6 +148,42 @@ interface ApiRequestConfig {
   signal?: AbortSignal;
 }
 
+const resolveReportsWebhookUrl = () => {
+  const envUrl =
+    import.meta.env.VITE_REPORTS_WEBHOOK_URL ??
+    import.meta.env.VITE_REACT_APP_REPORTS_WEBHOOK_URL;
+
+  if (envUrl) {
+    return envUrl;
+  }
+
+  if (import.meta.env.DEV) {
+    return "/reports-api/webhook/attendigo/reports";
+  }
+
+  if (typeof window !== "undefined") {
+    return "/reports-api/webhook/attendigo/reports";
+  }
+
+  return "https://ahmedd-fzz-11.app.n8n.cloud/webhook/attendigo/reports";
+};
+
+const REPORTS_WEBHOOK_URL = resolveReportsWebhookUrl();
+
+export type ReportsWebhookOption = "insights";
+
+export interface ReportsWebhookBasePayload {
+  teacher_user_id: string;
+  class_id: string;
+  range: "weekly" | "monthly";
+  start_date: string;
+  end_date: string;
+}
+
+export interface ReportsInsightsResponse {
+  insights: string[];
+}
+
 const buildUrl = (path: string): string => {
   if (!path.startsWith("/")) {
     return `${API_BASE_URL}/${path}`;
@@ -254,3 +301,60 @@ export const fetchDailyReport = async (
     method: "POST",
     body: payload,
   });
+
+const buildWebhookUrl = (payload: ReportsWebhookBasePayload & { option: ReportsWebhookOption }) => {
+  const params = new URLSearchParams();
+  Object.entries(payload).forEach(([key, value]) => {
+    if (value != null) {
+      params.set(key, String(value));
+    }
+  });
+
+  const queryString = params.toString();
+  const separator = REPORTS_WEBHOOK_URL.includes("?") ? "&" : "?";
+  return queryString.length > 0
+    ? `${REPORTS_WEBHOOK_URL}${separator}${queryString}`
+    : REPORTS_WEBHOOK_URL;
+};
+
+const getWebhookJson = async (
+  payload: ReportsWebhookBasePayload & { option: ReportsWebhookOption },
+): Promise<ReportsInsightsResponse> => {
+  const url = buildWebhookUrl(payload);
+
+  const response = await fetch(url, {
+    method: "GET",
+    headers: {
+      Accept: "application/json",
+    },
+  });
+
+  if (!response.ok) {
+    let message: string | undefined;
+    try {
+      const errorPayload = await response.json();
+      message =
+        (errorPayload && (errorPayload.message || errorPayload.error)) ??
+        undefined;
+    } catch (error) {
+      // ignore JSON parse errors and fall back to status text
+    }
+    throw new Error(message || response.statusText || "Request failed");
+  }
+
+  const raw = await response.text();
+
+  if (raw.trim().length === 0) {
+    return { insights: [] };
+  }
+
+  try {
+    return JSON.parse(raw) as ReportsInsightsResponse;
+  } catch (error) {
+    throw new Error("Received an invalid response from the reports service.");
+  }
+};
+
+export const fetchReportsInsights = async (
+  payload: ReportsWebhookBasePayload,
+): Promise<ReportsInsightsResponse> => getWebhookJson({ ...payload, option: "insights" });

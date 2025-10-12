@@ -15,6 +15,12 @@ export default defineConfig(({ mode }) => ({
         secure: false,
         rewrite: (path) => path.replace(/^\/api/, ""),
       },
+      "/reports-api": {
+        target: "https://ahmedd-fzz-11.app.n8n.cloud",
+        changeOrigin: true,
+        secure: false,
+        rewrite: (path) => path.replace(/^\/reports-api/, ""),
+      },
     },
   },
   plugins: [react(), mode === "development" && componentTagger()].filter(Boolean),

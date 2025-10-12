@@ -4,6 +4,14 @@
   "outputDirectory": "dist",
   "rewrites": [
     {
+      "source": "/api/:path*",
+      "destination": "https://web-production-166aa.up.railway.app/:path*"
+    },
+    {
+      "source": "/reports-api/:path*",
+      "destination": "https://ahmedd-fzz-11.app.n8n.cloud/:path*"
+    },
+    {
       "source": "/(.*)",
       "destination": "/index.html"
     }
