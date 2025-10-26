@@ -16,7 +16,7 @@ export default defineConfig(({ mode }) => ({
         rewrite: (path) => path.replace(/^\/api/, ""),
       },
       "/reports-api": {
-        target: "https://ahmedd-fzz-11.app.n8n.cloud",
+        target: "https://primary-production-25770.up.railway.app",
         changeOrigin: true,
         secure: false,
         rewrite: (path) => path.replace(/^\/reports-api/, ""),

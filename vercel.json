@@ -9,7 +9,7 @@
     },
     {
       "source": "/reports-api/:path*",
-      "destination": "https://ahmedd-fzz-11.app.n8n.cloud/:path*"
+      "destination": "https://primary-production-25770.up.railway.app/:path*"
     },
     {
       "source": "/(.*)",

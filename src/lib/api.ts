@@ -158,14 +158,14 @@ const resolveReportsWebhookUrl = () => {
   }
 
   if (import.meta.env.DEV) {
-    return "/reports-api/webhook/attendigo/reports";
+    return "/reports-api/webhook-test/attendigo/reports";
   }
 
   if (typeof window !== "undefined") {
-    return "/reports-api/webhook/attendigo/reports";
+    return "/reports-api/webhook-test/attendigo/reports";
   }
 
-  return "https://ahmedd-fzz-11.app.n8n.cloud/webhook/attendigo/reports";
+  return "https://primary-production-25770.up.railway.app/webhook-test/attendigo/reports";
 };
 
 const REPORTS_WEBHOOK_URL = resolveReportsWebhookUrl();
